@@ -14,6 +14,18 @@ const isIosPersonalTeamBuild = repoEnv.T3CODE_IOS_PERSONAL_TEAM === "1";
 const personalTeamBundleIdentifier = repoEnv.T3CODE_IOS_PERSONAL_TEAM_BUNDLE_ID?.trim();
 const IOS_BUNDLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+$/;
 
+// Local forks sign with their own Apple Developer team, which cannot use the
+// T3 Tools bundle identifiers or team id. Both stay pinned by default.
+const T3_TOOLS_APPLE_TEAM_ID = "ARK85ZXQ4Z";
+const customAppleTeamId = repoEnv.T3CODE_IOS_TEAM_ID?.trim();
+const customBundleIdentifier = repoEnv.T3CODE_IOS_BUNDLE_ID?.trim();
+
+if (customBundleIdentifier && !IOS_BUNDLE_IDENTIFIER_PATTERN.test(customBundleIdentifier)) {
+  throw new Error(
+    "T3CODE_IOS_BUNDLE_ID must be a reverse-DNS identifier such as com.example.t3code.",
+  );
+}
+
 const fromRepoRoot = (relativePath: string) => `../../${relativePath}`;
 
 if (
@@ -100,7 +112,7 @@ function resolveAppVariant(value: string | undefined): AppVariant {
 const variant = VARIANT_CONFIG[APP_VARIANT];
 const iosBundleIdentifier = isIosPersonalTeamBuild
   ? personalTeamBundleIdentifier!
-  : variant.iosBundleIdentifier;
+  : (customBundleIdentifier ?? variant.iosBundleIdentifier);
 
 const dmSansFonts = {
   regular: "@expo-google-fonts/dm-sans/400Regular/DMSans_400Regular.ttf",
@@ -188,11 +200,17 @@ const config: ExpoConfig = {
     // Pin code signing to the T3 Tools team so non-interactive `expo run:ios`
     // does not fall back to a personal team (which cannot sign app groups,
     // Sign in with Apple, or push notification entitlements).
-    appleTeamId: "ARK85ZXQ4Z",
-    associatedDomains: [
-      `applinks:${variant.relyingParty}`,
-      `webcredentials:${variant.relyingParty}`,
-    ],
+    appleTeamId: customAppleTeamId ?? T3_TOOLS_APPLE_TEAM_ID,
+    // The wildcard team profile a reduced-capability build falls back to cannot
+    // carry Associated Domains, and a fork does not own the relying party anyway.
+    ...(isIosPersonalTeamBuild
+      ? {}
+      : {
+          associatedDomains: [
+            `applinks:${variant.relyingParty}`,
+            `webcredentials:${variant.relyingParty}`,
+          ],
+        }),
     infoPlist: {
       NSAppTransportSecurity: {
         NSAllowsArbitraryLoads: true,
